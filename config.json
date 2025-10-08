@@ -1,0 +1,238 @@
+{
+  "directories": {
+    "data": "/usr/local/var/tidyme",
+    "logs": "/var/log/tidyme"
+  },
+  "daemon": {
+    "scan_interval": 3600,
+    "pid_file": "/var/run/tidyme.pid"
+  },
+  "safety_levels": {
+    "safe": "No risk, files regenerate automatically",
+    "caution": "Low risk, may require app restart",
+    "warning": "Medium risk, backup recommended",
+    "danger": "High risk, expert review required"
+  },
+  "exclusions": {
+    "patterns": [
+      "*/Library/Caches/com.apple.*",
+      "*/.git/*",
+      "*/.svn/*",
+      "*/node_modules/*",
+      "*/.Trash/*",
+      "*/Library/Application Support/Code/User/*",
+      "*/.ssh/*",
+      "*/.aws/*",
+      "*/.kube/*",
+      "*/Desktop/*",
+      "*/Documents/*",
+      "*/Downloads/*",
+      "*/Pictures/*",
+      "*/Movies/*",
+      "*/Music/*",
+      "*/Library/Keychains/*",
+      "*/Library/Mail/*",
+      "*/Library/Safari/*",
+      "*/Library/Calendars/*",
+      "*/Library/Reminders/*",
+      "*/Library/Notes/*",
+      "*/Projects/*",
+      "*/Documents/Important/*",
+      "*/Work/*",
+      "*/.config/*",
+      "*/.gnupg/*",
+      "*/Library/Mobile Documents/*",
+      "*/Library/Developer/Xcode/UserData/*",
+      "*/Library/Preferences/*",
+      "*/Library/Application Support/*",
+      "*/Library/Containers/*",
+      "*/Library/Group Containers/*",
+      "/System/*",
+      "/usr/*",
+      "/bin/*",
+      "/sbin/*",
+      "/private/*",
+      "/Library/Keychains/*",
+      "/Library/Preferences/*"
+    ],
+    "security_patterns": [
+      "*.key",
+      "*.pem",
+      "*.p12",
+      "*.crt",
+      "*.cer",
+      "*.der",
+      "*.pfx",
+      "*.p7b",
+      "*.p7c",
+      "*.p7s",
+      "*.sst"
+    ],
+    "config_patterns": [
+      "*.env",
+      ".env.*",
+      "config",
+      "*.conf",
+      "*.ini",
+      "*.cfg",
+      "*.plist",
+      "*.pref",
+      "*.settings",
+      "*.options"
+    ],
+    "data_patterns": [
+      "*.sqlite",
+      "*.db",
+      "*.sqlite3",
+      "*.mdb",
+      "*.accdb",
+      "*.dbf",
+      "*.fdb",
+      "*.gdb",
+      "*.sdb"
+    ],
+    "dev_patterns": [
+      "*.sln",
+      "*.csproj",
+      "*.vbproj",
+      "*.fsproj",
+      "*.xcodeproj",
+      "*.xcworkspace",
+      "Podfile.lock",
+      "composer.lock",
+      "yarn.lock",
+      "package-lock.json"
+    ],
+    "doc_patterns": [
+      "README*",
+      "CHANGELOG*",
+      "LICENSE*",
+      "CONTRIBUTING*",
+      "*.md",
+      "*.txt",
+      "*.doc",
+      "*.docx",
+      "*.pdf"
+    ],
+    "media_patterns": [
+      "*.jpg",
+      "*.jpeg",
+      "*.png",
+      "*.gif",
+      "*.bmp",
+      "*.tiff",
+      "*.mp3",
+      "*.mp4",
+      "*.avi",
+      "*.mov",
+      "*.wmv",
+      "*.flv",
+      "*.zip",
+      "*.rar",
+      "*.7z",
+      "*.tar.gz",
+      "*.dmg"
+    ],
+    "cache_exclusions": [
+      "*/com.apple.*",
+      "*/CloudKit/*",
+      "*/Spotlight/*",
+      "*/Safari/*"
+    ],
+    "temp_exclusions": [
+      "*.key",
+      "*.pem",
+      "*.p12",
+      "*.env",
+      ".env.*",
+      "config",
+      ".git",
+      ".svn",
+      "*.sqlite",
+      "*.db",
+      "*.plist"
+    ]
+  },
+  "cleanup": {
+    "cache": {
+      "min_age_days": 3,
+      "patterns": [
+        "*/Library/Caches/*/Cache/*",
+        "*/Library/Caches/*/GPUCache/*",
+        "*/Library/Caches/*/Code Cache/*",
+        "*/Library/Caches/*/*.cache",
+        "*/Library/Caches/*/*.tmp",
+        "*/Library/Caches/*/CachedData/*",
+        "*/Library/Caches/*/logs/*"
+      ]
+    },
+    "temp": {
+      "min_age_days": 1,
+      "patterns": [
+        "*/Downloads/*.part",
+        "*/Downloads/*.crdownload",
+        "*/Downloads/*.tmp",
+        "*/.Trash/*",
+        "*/tmp/*",
+        "*/Library/Application Support/*/tmp/*",
+        "*/Library/Logs/*"
+      ]
+    },
+    "dev": {
+      "min_age_days": 14,
+      "active_project_days": 7,
+      "patterns": [
+        "*/node_modules",
+        "*/__pycache__",
+        "*/build",
+        "*/dist",
+        "*/.pytest_cache",
+        "*/.coverage",
+        "*/coverage",
+        "*/.nyc_output",
+        "*/.next",
+        "*/.nuxt",
+        "*/target",
+        "*/bin/Debug",
+        "*/bin/Release",
+        "*/obj"
+      ]
+    }
+  },
+  "retention_policies": {
+    "npm_cache": 3,
+    "yarn_cache": 3,
+    "pip_cache": 7,
+    "python_cache": 7,
+    "vscode_cache": 7,
+    "chrome_cache": 3,
+    "safari_cache": 7,
+    "xcode_derived_data": 7,
+    "jetbrains_cache": 7,
+    "docker_cache": 7,
+    "spotify_cache": 7,
+    "slack_cache": 7,
+    "zoom_cache": 7,
+    "teams_cache": 7,
+    "discord_cache": 7,
+    "go_build_cache": 1,
+    "uv_cache": 1,
+    "puppeteer_cache": 1,
+    "electron_cache": 1,
+    "node_gyp_cache": 1,
+    "homebrew_cache": 1,
+    "podman_updater_cache": 1,
+    "pnpm_cache": 1,
+    "trash_contents": 1,
+    "qwen_history": 30,
+    "pnpm_store": 30,
+    "rustup_toolchains": 30,
+    "downloads_dmg": 30,
+    "downloads_zip": 7,
+    "downloads_archives": 7
+  },
+  "duplicate_detection": {
+    "min_file_size": 1024,
+    "semantic_similarity_threshold": 0.8
+  }
+}

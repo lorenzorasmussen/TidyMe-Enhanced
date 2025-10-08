@@ -1,0 +1,964 @@
+#!/usr/bin/env bash
+
+# Enhanced macOS System Cleanup Service with Safety Protocols
+# Version: 2.1
+# Features: Duplicate detection, semantic search, CLI interface, database logging, safety protocols
+
+set -euo pipefail
+
+echo "🧹 Enhanced macOS System Cleanup Service with Safety Protocols"
+echo ""
+echo "🛡️ Safety Classification System"
+echo "  🟢 SAFE - No risk, files regenerate automatically"
+echo "  🟡 CAUTION - Low risk, may require app restart"
+echo "  🟠 WARNING - Medium risk, backup recommended"
+echo "  🔴 DANGER - High risk, expert review required"
+echo ""
+
+# Configuration - Use relative paths for better portability
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DATA_DIR="$SCRIPT_DIR/data"
+LOG_DIR="$DATA_DIR"
+DB_PATH="$DATA_DIR/cleanup.db"
+LOG_FILE="$LOG_DIR/cleanup.log"
+PID_FILE="$DATA_DIR/cleanup-daemon.pid"
+BACKUP_DIR="$HOME/backups/tidyme-backup-$(date +%Y%m%d-%H%M%S)"
+
+# Create directories if they don't exist
+mkdir -p "$DATA_DIR"
+mkdir -p "$LOG_DIR"
+
+# Ensure log file exists and is writable
+if ! touch "$LOG_FILE" 2>/dev/null; then
+    echo "Warning: Cannot create log file at $LOG_FILE"
+    LOG_FILE="/tmp/tidyme-cleanup.log"
+    touch "$LOG_FILE" 2>/dev/null || { echo "Cannot create log file, exiting"; exit 1; }
+fi
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+# Safety Classification function
+safety_status() {
+    local level="$1"
+    case "$level" in
+        "SAFE") echo -e "${GREEN}🟢 SAFE${NC}" ;;
+        "CAUTION") echo -e "${YELLOW}🟡 CAUTION${NC}" ;;
+        "WARNING") echo -e "${YELLOW}🟠 WARNING${NC}" ;;
+        "DANGER") echo -e "${RED}🔴 DANGER${NC}" ;;
+        *) echo -e "${BLUE}$level${NC}" ;;
+    esac
+}
+
+# Load configuration file
+load_config() {
+    if [ -f "$SCRIPT_DIR/config.json" ]; then
+        # Extract retention policies from config
+        if command -v jq >/dev/null 2>&1; then
+            # Use jq if available
+            CACHE_MIN_AGE=$(jq -r '.cleanup.cache.min_age_days' "$SCRIPT_DIR/config.json" 2>/dev/null || echo 3)
+            TEMP_MIN_AGE=$(jq -r '.cleanup.temp.min_age_days' "$SCRIPT_DIR/config.json" 2>/dev/null || echo 1)
+            DEV_MIN_AGE=$(jq -r '.cleanup.dev.min_age_days' "$SCRIPT_DIR/config.json" 2>/dev/null || echo 14)
+        else
+            # Fallback values
+            CACHE_MIN_AGE=3
+            TEMP_MIN_AGE=1
+            DEV_MIN_AGE=14
+        fi
+    else
+        CACHE_MIN_AGE=3
+        TEMP_MIN_AGE=1
+        DEV_MIN_AGE=14
+    fi
+}
+
+# Logging function
+log() {
+    local message="$(date '+%Y-%m-%d %H:%M:%S') - $1"
+    echo "$message" | tee -a "$LOG_FILE"
+}
+
+# Interactive confirmation function
+confirm_action() {
+    local action_desc="$1"
+    read -r -p "⚠️  $action_desc (y/N): " response
+    if [[ ! "$response" =~ ^[Yy]$ ]]; then
+        echo "❌ Operation cancelled by user"
+        exit 0
+    fi
+}
+
+# Backup function
+create_backup() {
+    local backup_type="$1"
+    local source_path="$2"
+    
+    if [[ -d "$source_path" ]]; then
+        echo "💾 Creating backup of $backup_type..."
+        mkdir -p "$BACKUP_DIR" || { echo "❌ Backup directory creation failed"; exit 1; }
+        
+        if cp -R "$source_path" "$BACKUP_DIR/" 2>/dev/null; then
+            echo "✅ $backup_type backup successful: $BACKUP_DIR"
+            log "Backup: $backup_type backed up to $BACKUP_DIR"
+        else
+            echo "⚠️ $backup_type backup failed, but continuing..."
+            log "Backup: $backup_type backup failed"
+        fi
+    else
+        echo "⏭️ $backup_type not found, skipping backup"
+    fi
+}
+
+# Create self-healing restore script
+create_restore_script() {
+    cat > "$BACKUP_DIR/restore.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+echo "🔄 RESTORE FROM BACKUP"
+echo "======================"
+BACKUP_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+restore_component() {
+    local name="$1" component="$2"
+    if [[ -d "$BACKUP_DIR/$component" ]]; then
+        echo "📁 Restoring $name..."
+        mkdir -p "$HOME/Library/$component"
+        if rsync -a --delete "$BACKUP_DIR/$component/" "$HOME/Library/$component/" 2>/dev/null; then
+            echo "✅ $name restored successfully"
+        elif cp -R "$BACKUP_DIR/$component/"* "$HOME/Library/$component/" 2>/dev/null; then
+            echo "✅ $name restored via fallback method"
+        else
+            echo "⚠️ $name restore failed"
+        fi
+    else
+        echo "⏭️ $name backup not found"
+    fi
+}
+
+restore_component "Caches" "Caches"
+restore_component "Logs" "Logs"
+restore_component "Preferences" "Preferences"
+echo "✅ Restore complete!"
+EOF
+
+    chmod +x "$BACKUP_DIR/restore.sh"
+    echo "🔧 Restore script created: $BACKUP_DIR/restore.sh"
+}
+
+# Database functions
+db_execute() {
+    sqlite3 "$DB_PATH" "$1"
+}
+
+db_insert_scan() {
+    local scan_type="$1"
+    local files_found="$2"
+    local total_size="$3"
+    local status="$4"
+    
+    db_execute "INSERT INTO scans (scan_type, files_found, total_size, status) VALUES ('$scan_type', $files_found, $total_size, '$status');"
+    db_execute "SELECT last_insert_rowid();"
+}
+
+db_insert_file() {
+    local scan_id="$1"
+    local path="$2"
+    local size="$3"
+    local hash="$4"
+    local file_type="$5"
+    local last_access="$6"
+    local last_modified="$7"
+    
+    db_execute "INSERT OR REPLACE INTO files (scan_id, path, size, hash, file_type, last_access, last_modified) VALUES ($scan_id, '$path', $size, '$hash', '$file_type', '$last_access', '$last_modified');"
+}
+
+# Initialize database if needed
+initialize_database() {
+    if [ ! -f "$DB_PATH" ]; then
+        log "Initializing database..."
+        sqlite3 "$DB_PATH" << 'EOF'
+CREATE TABLE IF NOT EXISTS scans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scan_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+    scan_type TEXT,
+    files_found INTEGER,
+    total_size INTEGER,
+    status TEXT
+);
+CREATE TABLE IF NOT EXISTS files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    path TEXT UNIQUE,
+    size INTEGER,
+    hash TEXT,
+    file_type TEXT,
+    last_access DATETIME,
+    last_modified DATETIME,
+    is_duplicate INTEGER DEFAULT 0,
+    duplicate_group TEXT,
+    confidence_score REAL,
+    scan_id INTEGER,
+    FOREIGN KEY (scan_id) REFERENCES scans (id)
+);
+CREATE TABLE IF NOT EXISTS duplicates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id TEXT,
+    file_path TEXT,
+    file_size INTEGER,
+    file_hash TEXT,
+    similarity_score REAL,
+    recommended_action TEXT,
+    scan_date DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS cleanup_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    action_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+    action_type TEXT,
+    file_path TEXT,
+    file_size INTEGER,
+    success INTEGER,
+    error_message TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_files_hash ON files(hash);
+CREATE INDEX IF NOT EXISTS idx_files_size ON files(size);
+CREATE INDEX IF NOT EXISTS idx_duplicates_group ON duplicates(group_id);
+EOF
+        log "Database initialized successfully"
+    fi
+}
+
+# Advanced file hashing with multiple algorithms
+calculate_file_hash() {
+    local file="$1"
+    local hash_type="${2:-sha256}"
+    
+    case "$hash_type" in
+        "quick")
+            # Quick hash for large files - sample first/middle/last chunks
+            local size=$(stat -f%z "$file" 2>/dev/null || echo 0)
+            if [ "$size" -gt 1048576 ]; then
+                (head -c 1024 "$file"; dd if="$file" bs=1024 skip=$((size/2048)) count=1 2>/dev/null; tail -c 1024 "$file") | shasum -a 256 | cut -d' ' -f1
+            else
+                shasum -a 256 "$file" | cut -d' ' -f1
+            fi
+            ;;
+        "content")
+            # Content-based hash (ignoring metadata)
+            shasum -a 256 "$file" | cut -d' ' -f1
+            ;;
+        "semantic")
+            # Semantic similarity for text files
+            if file "$file" | grep -q "text"; then
+                # Remove whitespace and normalize for semantic comparison
+                tr -d '[:space:]' < "$file" | tr '[:upper:]' '[:lower:]' | shasum -a 256 | cut -d' ' -f1
+            else
+                shasum -a 256 "$file" | cut -d' ' -f1
+            fi
+            ;;
+        *)
+            shasum -a 256 "$file" | cut -d' ' -f1
+            ;;
+    esac
+}
+
+# Text similarity comparison
+compare_text_similarity() {
+    local file1="$1"
+    local file2="$2"
+
+    # Create unique temporary files
+    local temp_id=$$
+    local words1="/tmp/words1-${temp_id}"
+    local words2="/tmp/words2-${temp_id}"
+
+    # Extract words from both files
+    if ! tr '[:space:]' '\n' < "$file1" 2>/dev/null | tr '[:upper:]' '[:lower:]' | sort -u > "$words1" 2>/dev/null; then
+        echo "0"
+        return
+    fi
+
+    if ! tr '[:space:]' '\n' < "$file2" 2>/dev/null | tr '[:upper:]' '[:lower:]' | sort -u > "$words2" 2>/dev/null; then
+        rm -f "$words1"
+        echo "0"
+        return
+    fi
+
+    # Calculate similarity
+    local common=$(comm -12 "$words1" "$words2" 2>/dev/null | wc -l)
+    local total1=$(wc -l < "$words1" 2>/dev/null)
+    local total2=$(wc -l < "$words2" 2>/dev/null)
+    local total_unique=$((total1 + total2 - common))
+
+    # Clean up temporary files
+    rm -f "$words1" "$words2"
+
+    if [ "$total_unique" -gt 0 ] && command -v bc >/dev/null 2>&1; then
+        echo "scale=3; $common * 2 / $total_unique" | bc -l 2>/dev/null || echo "0"
+    else
+        echo "0"
+    fi
+}
+
+# Format bytes to human readable format
+format_bytes() {
+    local bytes="$1"
+    if command -v numfmt >/dev/null 2>&1; then
+        numfmt --to=iec "$bytes" 2>/dev/null || echo "$bytes bytes"
+    else
+        # Fallback formatting
+        if [ "$bytes" -gt 1073741824 ]; then
+            echo "$((bytes / 1073741824))G"
+        elif [ "$bytes" -gt 1048576 ]; then
+            echo "$((bytes / 1048576))M"
+        elif [ "$bytes" -gt 1024 ]; then
+            echo "$((bytes / 1024))K"
+        else
+            echo "${bytes} bytes"
+        fi
+    fi
+}
+
+# Advanced duplicate detection with multiple algorithms
+find_duplicates_advanced() {
+    log "🔍 Advanced Duplicate Detection started"
+    
+    local scan_id=$(db_insert_scan "duplicate_scan" 0 0 "running")
+    local temp_dir="/tmp/cleanup-duplicates-$$"
+    mkdir -p "$temp_dir"
+    
+    # Exclude directories
+    local exclude_patterns=(
+        "*/Library/Caches/com.apple.*"
+        "*/.git/*"
+        "*/.svn/*"
+        "*/node_modules/*"
+        "*/.Trash/*"
+        "*/Library/Application Support/Code/User/*"
+        "*/.ssh/*"
+        "*/.aws/*"
+        "*/.kube/*"
+    )
+    
+    local exclude_args=()
+    for pattern in "${exclude_patterns[@]}"; do
+        exclude_args+=(-not -path "$pattern")
+    done
+    
+    log "Phase 1: Size-based grouping..."
+    find "$HOME" -type f -size +1k "${exclude_args[@]}" 2>/dev/null | \
+    while read -r file; do
+        if [ -r "$file" ]; then
+            local size=$(stat -f%z "$file" 2>/dev/null || echo 0)
+            echo "$size|$file"
+        fi
+    done | sort -n > "$temp_dir/files_by_size.txt"
+    
+    echo "Phase 2: Hash-based duplicate detection..."
+    local total_duplicates=0
+    local total_size_saved=0
+    
+    # Group files by size and find potential duplicates
+    while IFS='|' read -r size files_line; do
+        if [ -n "$files_line" ]; then
+            # Convert space-separated files to array
+            IFS=' ' read -r -a file_array <<< "$files_line"
+
+            # Only process if we have multiple files of same size
+            if [ ${#file_array[@]} -gt 1 ]; then
+                local group_id=$(uuidgen 2>/dev/null || echo "group-$(date +%s)")
+                echo "Checking size group: $size bytes (${#file_array[@]} files)"
+
+                local hashes=()
+                local paths=()
+
+                for file in "${file_array[@]}"; do
+                    # Skip if file doesn't exist or isn't readable
+                    if [ ! -r "$file" ] || [ ! -f "$file" ]; then
+                        continue
+                    fi
+
+                    local content_hash=$(calculate_file_hash "$file" "content")
+
+                    # Skip if hash calculation failed
+                    if [ -z "$content_hash" ]; then
+                        continue
+                    fi
+
+                    # Store in database
+                    local last_access=$(stat -f%Sa "$file" 2>/dev/null || echo "")
+                    local last_modified=$(stat -f%Sm "$file" 2>/dev/null || echo "")
+                    local file_type=$(file -b "$file" 2>/dev/null || echo "unknown")
+
+                    db_insert_file "$scan_id" "$file" "$size" "$content_hash" "$file_type" "$last_access" "$last_modified"
+
+                    # Check for duplicates
+                    local hash_match=false
+                    for i in "${!hashes[@]}"; do
+                        if [ "${hashes[$i]}" = "$content_hash" ]; then
+                            # Found duplicate
+                            echo "DUPLICATE: $file -> ${paths[$i]}"
+                            db_execute "INSERT INTO duplicates (group_id, file_path, file_size, file_hash, similarity_score, recommended_action) VALUES ('$group_id', '$file', $size, '$content_hash', 1.0, 'delete');"
+                            total_duplicates=$((total_duplicates + 1))
+                            total_size_saved=$((total_size_saved + size))
+                            hash_match=true
+                            break
+                        fi
+                    done
+
+                    if [ "$hash_match" = false ]; then
+                        hashes+=("$content_hash")
+                        paths+=("$file")
+                    fi
+                done
+            fi
+        fi
+    done < <(awk -F'|' '
+        { sizes[$1] = sizes[$1] ? sizes[$1] " " $2 : $2 }
+        END {
+            for (s in sizes) {
+                split(sizes[s], files, " ")
+                if (length(files) > 1) {
+                    printf "%s|%s\n", s, sizes[s]
+                }
+            }
+        }
+    ' "$temp_dir/files_by_size.txt")
+    
+    echo "Phase 3: Semantic similarity detection..."
+    # Find semantically similar files (for text files)
+    find "$HOME" -type f \( -name "*.txt" -o -name "*.md" -o -name "*.py" -o -name "*.js" -o -name "*.html" \) "${exclude_args[@]}" 2>/dev/null | \
+    while read -r file; do
+        if [ -r "$file" ] && [ -f "$file" ]; then
+            local semantic_hash=$(calculate_file_hash "$file" "semantic")
+            local size=$(stat -f%z "$file" 2>/dev/null || echo 0)
+
+            # Skip if semantic hash is empty
+            if [ -z "$semantic_hash" ]; then
+                continue
+            fi
+
+            # Extract first 16 characters for similarity matching
+            local hash_prefix=$(echo "$semantic_hash" | cut -c1-16)
+
+            # Check for semantic duplicates with slight variations
+            local similar_files=$(db_execute "SELECT path FROM files WHERE hash LIKE '${hash_prefix}%' AND path != '$file' LIMIT 5;")
+
+            if [ -n "$similar_files" ]; then
+                echo "$similar_files" | while read -r similar_file; do
+                    if [ -r "$similar_file" ] && [ -f "$similar_file" ]; then
+                        local similarity_score=$(compare_text_similarity "$file" "$similar_file")
+                        # Check if similarity_score is a valid number and greater than 0.8
+                        if [[ "$similarity_score" =~ ^[0-9]*\.?[0-9]+$ ]] && (( $(echo "$similarity_score > 0.8" | bc -l 2>/dev/null || echo 0) )); then
+                            echo "SEMANTIC DUPLICATE: $file -> $similar_file (similarity: $similarity_score)"
+                            local group_id=$(uuidgen 2>/dev/null || echo "semantic-$(date +%s)")
+                            db_execute "INSERT INTO duplicates (group_id, file_path, file_size, file_hash, similarity_score, recommended_action) VALUES ('$group_id', '$file', $size, '$semantic_hash', $similarity_score, 'review');"
+                        fi
+                    fi
+                done
+            fi
+        fi
+    done
+    
+    # Update scan status
+    db_execute "UPDATE scans SET files_found = $total_duplicates, total_size = $total_size_saved, status = 'completed' WHERE id = $scan_id;"
+    
+    echo -e "${GREEN}✅ Duplicate detection complete${NC}"
+    echo "Found $total_duplicates duplicates"
+    echo "Potential space savings: $(format_bytes $total_size_saved)"
+    
+    rm -rf "$temp_dir"
+}
+
+# Enhanced cache cleanup with safety checks
+cleanup_caches_advanced() {
+    log "🧠 Enhanced Cache Cleanup with Safety Checks started"
+    
+    # Safety check - require interactive confirmation
+    echo -e "${BLUE}🧠 Cache Cleanup (Safety Level: 🟢 SAFE)${NC}"
+    confirm_action "Proceed with cache cleanup? This will delete cache files older than 3 days"
+    
+    # Create backup before proceeding
+    create_backup "Caches" "$HOME/Library/Caches"
+    create_restore_script
+    
+    local scan_id=$(db_insert_scan "cache_cleanup" 0 0 "running")
+    local files_cleaned=0
+    local space_freed=0
+    
+    # System caches (safe to remove)
+    local cache_patterns=(
+        "$HOME/Library/Caches/*/Cache/*"
+        "$HOME/Library/Caches/*/GPUCache/*"
+        "$HOME/Library/Caches/*/Code Cache/*"
+        "$HOME/Library/Caches/*/*.cache"
+        "$HOME/Library/Caches/*/*.tmp"
+        "$HOME/Library/Caches/*/CachedData/*"
+        "$HOME/Library/Caches/*/logs/*"
+    )
+    
+    # Exclude critical Apple caches
+    local exclude_patterns=(
+        "*/com.apple.*"
+        "*/CloudKit/*"
+        "*/Spotlight/*"
+        "*/Safari/*"
+    )
+    
+    for pattern in "${cache_patterns[@]}"; do
+        echo "Scanning: $pattern"
+        
+        find $(dirname "$pattern") -name "$(basename "$pattern")" -type f -mtime +3 2>/dev/null | \
+        while read -r file; do
+            local should_exclude=false
+            for exclude in "${exclude_patterns[@]}"; do
+                if [[ "$file" == $exclude ]]; then
+                    should_exclude=true
+                    break
+                fi
+            done
+            
+            if [ "$should_exclude" = false ] && [ -f "$file" ]; then
+                local size=$(stat -f%z "$file" 2>/dev/null || echo 0)
+                if rm "$file" 2>/dev/null; then
+                    files_cleaned=$((files_cleaned + 1))
+                    space_freed=$((space_freed + size))
+                    db_execute "INSERT INTO cleanup_log (action_type, file_path, file_size, success) VALUES ('cache_delete', '$file', $size, 1);"
+                else
+                    db_execute "INSERT INTO cleanup_log (action_type, file_path, file_size, success, error_message) VALUES ('cache_delete', '$file', $size, 0, 'Permission denied');"
+                fi
+            fi
+        done
+    done
+    
+    # Clean empty cache directories
+    find "$HOME/Library/Caches" -type d -empty -delete 2>/dev/null || true
+    
+    db_execute "UPDATE scans SET files_found = $files_cleaned, total_size = $space_freed, status = 'completed' WHERE id = $scan_id;"
+    
+    log "✅ Cache cleanup complete - Files cleaned: $files_cleaned, Space freed: $(format_bytes $space_freed)"
+    echo -e "${GREEN}✅ Cache cleanup complete${NC}"
+    echo "Files cleaned: $files_cleaned"
+    echo "Space freed: $(format_bytes $space_freed)"
+    echo "Backup available: $BACKUP_DIR"
+    echo "Restore script: $BACKUP_DIR/restore.sh"
+}
+
+# Enhanced temporary files cleanup with safety checks
+cleanup_temp_advanced() {
+    log "🗑️ Enhanced Temporary Files Cleanup with Safety Checks started"
+    
+    # Safety check - require interactive confirmation
+    echo -e "${BLUE}🗑️ Temporary Files Cleanup (Safety Level: 🟢 SAFE)${NC}"
+    confirm_action "Proceed with temporary files cleanup? This will delete temp files older than 1 day"
+    
+    # Create backup before proceeding for select directories
+    create_backup "Logs" "$HOME/Library/Logs"
+    create_restore_script
+    
+    local scan_id=$(db_insert_scan "temp_cleanup" 0 0 "running")
+    local files_cleaned=0
+    local space_freed=0
+    
+    # Temporary file patterns
+    local temp_patterns=(
+        "$HOME/Downloads/*.part"
+        "$HOME/Downloads/*.crdownload"
+        "$HOME/Downloads/*.tmp"
+        "$HOME/.Trash/*"
+        "/tmp/*"
+        "$HOME/Library/Application Support/*/tmp/*"
+        "$HOME/Library/Logs/*"
+    )
+    
+    # Safe exclusions
+    local exclude_patterns=(
+        "*.key"
+        "*.pem"
+        "*.p12"
+        "*.env"
+        ".env.*"
+        "config"
+        ".git"
+        ".svn"
+        "*.sqlite"
+        "*.db"
+        "*.plist"
+    )
+    
+    for pattern in "${temp_patterns[@]}"; do
+        echo "Scanning: $pattern"
+        
+        find $(dirname "$pattern" 2>/dev/null || echo "/nonexistent") -name "$(basename "$pattern")" -type f -mtime +1 2>/dev/null | \
+        while read -r file; do
+            local should_exclude=false
+            for exclude in "${exclude_patterns[@]}"; do
+                if [[ "$(basename "$file")" == $exclude ]]; then
+                    should_exclude=true
+                    break
+                fi
+            done
+            
+            if [ "$should_exclude" = false ] && [ -f "$file" ]; then
+                local size=$(stat -f%z "$file" 2>/dev/null || echo 0)
+                if rm "$file" 2>/dev/null; then
+                    files_cleaned=$((files_cleaned + 1))
+                    space_freed=$((space_freed + size))
+                    db_execute "INSERT INTO cleanup_log (action_type, file_path, file_size, success) VALUES ('temp_delete', '$file', $size, 1);"
+                else
+                    db_execute "INSERT INTO cleanup_log (action_type, file_path, file_size, success, error_message) VALUES ('temp_delete', '$file', $size, 0, 'Permission denied');"
+                fi
+            fi
+        done
+    done
+    
+    db_execute "UPDATE scans SET files_found = $files_cleaned, total_size = $space_freed, status = 'completed' WHERE id = $scan_id;"
+    
+    log "✅ Temporary files cleanup complete - Files cleaned: $files_cleaned, Space freed: $(format_bytes $space_freed)"
+    echo -e "${GREEN}✅ Temporary files cleanup complete${NC}"
+    echo "Files cleaned: $files_cleaned"
+    echo "Space freed: $(format_bytes $space_freed)"
+    echo "Backup available: $BACKUP_DIR"
+    echo "Restore script: $BACKUP_DIR/restore.sh"
+}
+
+# Enhanced development cleanup with safety checks
+cleanup_development_advanced() {
+    echo -e "${BLUE}💻 Enhanced Development Cleanup with Safety Checks${NC}"
+    
+    # Safety check - require interactive confirmation
+    echo -e "${BLUE}💻 Development Cleanup (Safety Level: 🟡 CAUTION)${NC}"
+    confirm_action "Proceed with development cleanup? This will delete development artifacts older than 14 days"
+    
+    local scan_id=$(db_insert_scan "dev_cleanup" 0 0 "running")
+    local files_cleaned=0
+    local space_freed=0
+    
+    # Detect active projects
+    local active_projects=()
+    find "$HOME" -name ".git" -type d 2>/dev/null | while read -r gitdir; do
+        local project_dir=$(dirname "$gitdir")
+        local recent_files=$(find "$project_dir" -type f -mtime -7 2>/dev/null | wc -l)
+        if [ "$recent_files" -gt 0 ]; then
+            active_projects+=("$project_dir")
+            echo "Protected active project: $project_dir"
+        fi
+    done
+    
+    # Development artifacts to clean
+    local dev_patterns=(
+        "*/node_modules"
+        "*/__pycache__"
+        "*/build"
+        "*/dist"
+        "*/.pytest_cache"
+        "*/.coverage"
+        "*/coverage"
+        "*/.nyc_output"
+        "*/.next"
+        "*/.nuxt"
+        "*/target"
+        "*/bin/Debug"
+        "*/bin/Release"
+        "*/obj"
+    )
+    
+    for pattern in "${dev_patterns[@]}"; do
+        echo "Scanning development artifacts: $pattern"
+        
+        find "$HOME" -path "$pattern" -type d -mtime +14 2>/dev/null | \
+        while read -r dir; do
+            local should_protect=false
+            for active_project in "${active_projects[@]}"; do
+                if [[ "$dir" == "$active_project"* ]]; then
+                    should_protect=true
+                    break
+                fi
+            done
+            
+            if [ "$should_protect" = false ] && [ -d "$dir" ]; then
+                local size=$(du -sk "$dir" 2>/dev/null | cut -f1 || echo 0)
+                size=$((size * 1024))
+                
+                if rm -rf "$dir" 2>/dev/null; then
+                    files_cleaned=$((files_cleaned + 1))
+                    space_freed=$((space_freed + size))
+                    db_execute "INSERT INTO cleanup_log (action_type, file_path, file_size, success) VALUES ('dev_delete', '$dir', $size, 1);"
+                else
+                    db_execute "INSERT INTO cleanup_log (action_type, file_path, file_size, success, error_message) VALUES ('dev_delete', '$dir', $size, 0, 'Permission denied');"
+                fi
+            fi
+        done
+    done
+    
+    db_execute "UPDATE scans SET files_found = $files_cleaned, total_size = $space_freed, status = 'completed' WHERE id = $scan_id;"
+    
+    echo -e "${GREEN}✅ Development cleanup complete${NC}"
+    echo "Directories cleaned: $files_cleaned"
+    echo "Space freed: $(format_bytes $space_freed)"
+    echo "Active projects protected: ${#active_projects[@]}"
+}
+
+# Enhanced system files analysis and cleanup with safety warnings
+cleanup_system_advanced() {
+    echo -e "${BLUE}🖥️ Enhanced System Files Cleanup with Safety Warnings${NC}"
+    
+    # Safety check - require elevated privileges for system cleanup
+    echo -e "${RED}🖥️ System Cleanup (Safety Level: 🔴 DANGER)${NC}"
+    echo -e "${RED}⚠️ This operation requires administrative privileges and affects system-wide files${NC}"
+    echo -e "${RED}⚠️ Incorrect usage may affect system stability${NC}"
+    confirm_action "Proceed with system-level cleanup? (Requires admin privileges)"
+    
+    # System caches that are safe to remove
+    local system_caches=(
+        "/System/Library/Caches"
+        "/Library/Caches"
+        "/var/folders/*/*/C/*"  # User cache folders
+        "/var/log/*"
+    )
+    
+    echo "Analyzing system cache usage..."
+    for cache_dir in "${system_caches[@]}"; do
+        if [ -d "$cache_dir" ]; then
+            local size=$(du -sh "$cache_dir" 2>/dev/null | cut -f1 || echo "0B")
+            echo "  $cache_dir: $size"
+        fi
+    done
+    
+    echo -e "${YELLOW}⚠️ System file cleanup requires admin privileges${NC}"
+    echo -e "${YELLOW}⚠️ Run with sudo for system-level cleanup${NC}"
+    echo -e "${GREEN}ℹ️ This operation is designed to be safe, but always backup critical data${NC}"
+}
+
+# Report generation
+generate_report() {
+    echo -e "${PURPLE}📊 Cleanup Report${NC}"
+    echo "=================="
+    
+    echo -e "\n${CYAN}Recent Scans:${NC}"
+    db_execute "SELECT scan_date, scan_type, files_found, total_size, status FROM scans ORDER BY scan_date DESC LIMIT 10;" | \
+    while IFS='|' read -r date type files size status; do
+        local size_human=$(format_bytes "$size" 2>/dev/null || echo "$size bytes")
+        echo "  $date | $type | $files files | $size_human | $status"
+    done
+    
+    echo -e "\n${CYAN}Duplicate Groups:${NC}"
+    db_execute "SELECT group_id, COUNT(*) as count, file_size FROM duplicates GROUP BY group_id ORDER BY count DESC LIMIT 10;" | \
+    while IFS='|' read -r group count size; do
+        local size_human=$(format_bytes "$size" 2>/dev/null || echo "$size bytes")
+        echo "  Group $group: $count files, $size_human each"
+    done
+    
+    echo -e "\n${CYAN}Total Space Usage:${NC}"
+    local total_cache_size=$(db_execute "SELECT SUM(total_size) FROM scans WHERE scan_type = 'cache_cleanup';")
+    local total_temp_size=$(db_execute "SELECT SUM(total_size) FROM scans WHERE scan_type = 'temp_cleanup';")
+    local total_dev_size=$(db_execute "SELECT SUM(total_size) FROM scans WHERE scan_type = 'dev_cleanup';")
+    
+    echo "  Cache cleaned: $(format_bytes ${total_cache_size:-0})"
+    echo "  Temp files cleaned: $(format_bytes ${total_temp_size:-0})"
+    echo "  Dev files cleaned: $(format_bytes ${total_dev_size:-0})"
+    
+    local total_freed=$((${total_cache_size:-0} + ${total_temp_size:-0} + ${total_dev_size:-0}))
+    echo "  Total freed: $(format_bytes $total_freed)"
+}
+
+# Background daemon
+start_daemon() {
+    if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+        echo "Daemon already running (PID: $(cat "$PID_FILE"))"
+        return
+    fi
+    
+    echo "Starting cleanup daemon..."
+    
+    (
+        while true; do
+            log "Background scan starting..."
+            
+            # Quick duplicate scan every hour
+            find_duplicates_advanced > /dev/null 2>&1
+            
+            # Sleep for 1 hour
+            sleep 3600
+        done
+    ) &
+    
+    echo $! > "$PID_FILE"
+    echo "Daemon started with PID: $!"
+}
+
+stop_daemon() {
+    if [ -f "$PID_FILE" ]; then
+        local pid=$(cat "$PID_FILE")
+        if kill "$pid" 2>/dev/null; then
+            echo "Daemon stopped (PID: $pid)"
+            rm -f "$PID_FILE"
+        else
+            echo "Daemon not running"
+            rm -f "$PID_FILE"
+        fi
+    else
+        echo "Daemon not running"
+    fi
+}
+
+# CLI Interface
+show_menu() {
+    echo -e "${CYAN}"
+    echo "╔══════════════════════════════════════════════════════════════╗"
+    echo "║                Advanced macOS System Cleanup                ║"
+    echo "╠══════════════════════════════════════════════════════════════╣"
+    echo "║  1. Quick Scan & Report                                      ║"
+    echo "║  2. Find Duplicates (Advanced)                               ║"
+    echo "║  3. Clean Caches                                             ║"
+    echo "║  4. Clean Temporary Files                                    ║"
+    echo "║  5. Clean Development Files                                  ║"
+    echo "║  6. System Analysis                                          ║"
+    echo "║  7. Generate Report                                          ║"
+    echo "║  8. Start Background Daemon                                  ║"
+    echo "║  9. Stop Background Daemon                                   ║"
+    echo "║  10. Complete Cleanup (All)                                  ║"
+    echo "║  0. Exit                                                     ║"
+    echo "╚══════════════════════════════════════════════════════════════╝"
+    echo -e "${NC}"
+}
+
+# Help function
+show_help() {
+    echo "TidyMe - Advanced macOS System Cleanup Service"
+    echo ""
+    echo "Usage: cleanup [command]"
+    echo ""
+    echo "Commands:"
+    echo "  scan              Find duplicates (advanced)"
+    echo "  clean-cache       Clean caches"
+    echo "  clean-temp        Clean temporary files"
+    echo "  clean-dev         Clean development files"
+    echo "  clean-all         Run all cleanups"
+    echo "  report            Generate report"
+    echo "  daemon-start      Start background daemon"
+    echo "  daemon-stop       Stop background daemon"
+    echo "  system            System analysis"
+    echo "  help, --help      Display this help message"
+    echo ""
+    echo "If no command is provided, the interactive menu is displayed."
+}
+
+# Main function
+main() {
+    # Load configuration
+    load_config
+    
+    # Initialize database
+    initialize_database
+    
+    # Handle command line arguments
+    case "${1:-}" in
+        "scan")
+            find_duplicates_advanced
+            ;;
+        "clean-cache")
+            cleanup_caches_advanced
+            ;;
+        "clean-temp")
+            cleanup_temp_advanced
+            ;;
+        "clean-dev")
+            cleanup_development_advanced
+            ;;
+        "clean-all")
+            echo -e "${YELLOW}⚠️ Complete Cleanup Selected (Safety Level: 🟡 CAUTION)${NC}"
+            confirm_action "Proceed with complete cleanup? This will run all cleanup operations"
+            cleanup_caches_advanced
+            cleanup_temp_advanced
+            cleanup_development_advanced
+            generate_report
+            ;;
+        "report")
+            generate_report
+            ;;
+        "daemon-start")
+            start_daemon
+            ;;
+        "daemon-stop")
+            stop_daemon
+            ;;
+        "system")
+            cleanup_system_advanced
+            ;;
+        "help"|"--help"|"-h")
+            show_help
+            ;;
+        "")
+            # Interactive mode
+            while true; do
+                show_menu
+                echo -n "Select option [0-10]: "
+                read -r choice
+                
+                case $choice in
+                    1)
+                        echo -e "${BLUE}Running quick scan...${NC}"
+                        find_duplicates_advanced
+                        generate_report
+                        ;;
+                    2)
+                        find_duplicates_advanced
+                        ;;
+                    3)
+                        cleanup_caches_advanced
+                        ;;
+                    4)
+                        cleanup_temp_advanced
+                        ;;
+                    5)
+                        cleanup_development_advanced
+                        ;;
+                    6)
+                        cleanup_system_advanced
+                        ;;
+                    7)
+                        generate_report
+                        ;;
+                    8)
+                        start_daemon
+                        ;;
+                    9)
+                        stop_daemon
+                        ;;
+                    10)
+                        echo -e "${YELLOW}⚠️ Complete Cleanup Selected (Safety Level: 🟡 CAUTION)${NC}"
+                        confirm_action "Proceed with complete cleanup? This will run all cleanup operations"
+                        cleanup_caches_advanced
+                        cleanup_temp_advanced
+                        cleanup_development_advanced
+                        generate_report
+                        ;;
+                    0)
+                        echo -e "${GREEN}Goodbye!${NC}"
+                        exit 0
+                        ;;
+                    *)
+                        echo -e "${RED}Invalid option. Please try again.${NC}"
+                        ;;
+                esac
+                
+                echo ""
+                echo -n "Press Enter to continue..."
+                read -r
+            done
+            ;;
+        *)
+            echo "Unknown command: $1"
+            show_help
+            exit 1
+            ;;
+    esac
+}
+
+# Run main function
+main "$@"

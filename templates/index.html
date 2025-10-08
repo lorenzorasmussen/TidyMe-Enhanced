@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TidyMe - macOS System Cleanup</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-content">
+                <div>
+                    <h1>🧹 TidyMe</h1>
+                    <p>Advanced macOS System Cleanup Service</p>
+                </div>
+                <button onclick="showAIChat()" class="btn btn-ai" title="AI Assistant">
+                    🤖 Chat
+                </button>
+            </div>
+        </header>
+
+         <div class="stats-grid">
+             <div class="stat-card">
+                 <h3>Space Cleaned</h3>
+                 <div id="total-space">0 MB</div>
+             </div>
+             <div class="stat-card">
+                 <h3>Duplicates Found</h3>
+                 <div id="duplicates-count">0</div>
+             </div>
+             <div class="stat-card">
+                 <h3>System Health</h3>
+                 <div id="system-health">Checking...</div>
+             </div>
+             <div class="stat-card">
+                 <h3>Memory Usage</h3>
+                 <div id="memory-usage">Checking...</div>
+             </div>
+         </div>
+
+          <!-- Main Navigation Tabs -->
+          <div class="main-tabs">
+              <button onclick="switchTab('cleanup')" class="main-tab-btn active" id="cleanup-tab">🧹 Cleanup</button>
+              <button onclick="switchTab('system')" class="main-tab-btn" id="system-tab">🔧 System</button>
+              <button onclick="switchTab('monitoring')" class="main-tab-btn" id="monitoring-tab">📊 Monitoring</button>
+              <button onclick="switchTab('reports')" class="main-tab-btn" id="reports-tab">📋 Reports</button>
+              <button onclick="switchTab('ai')" class="main-tab-btn" id="ai-tab">🤖 AI Assistant</button>
+          </div>
+
+         <!-- Cleanup Tab Content -->
+         <div id="cleanup-content" class="tab-content active">
+             <div class="actions-section">
+                 <h2>Cleanup Actions</h2>
+                 <div class="query-section">
+                     <input type="text" id="query-input" placeholder="Ask me to clean, scan, or optimize..." onkeypress="handleQueryKeyPress(event)">
+                     <button onclick="processQuery()" class="btn btn-primary">Ask AI</button>
+                 </div>
+                  <div class="action-buttons">
+                     <div class="expandable-button">
+                         <button onclick="runCleanup('scan')" class="btn btn-primary expandable-btn">
+                             🔍 Scan for Duplicates
+                             <span class="expand-icon">▼</span>
+                         </button>
+                         <div class="expandable-content">
+                             <div class="button-info">
+                                 <h4>Duplicate File Detection</h4>
+                                 <p>Scans your system for duplicate files using advanced algorithms including size-based grouping, hash comparison, and semantic similarity analysis.</p>
+                                 <div class="customizations">
+                                     <h5>⚙️ Customizations:</h5>
+                                     <label><input type="checkbox" id="scan-exclude-system"> Exclude system directories</label><br>
+                                     <label><input type="checkbox" id="scan-semantic" checked> Enable semantic analysis</label><br>
+                                     <label><input type="checkbox" id="scan-quick-hash" checked> Use quick hashing for large files</label><br>
+                                     <label>Min file size: <input type="number" id="scan-min-size" value="1024" min="0"> bytes</label>
+                                 </div>
+                             </div>
+                         </div>
+                     </div>
+
+                     <div class="expandable-button">
+                         <button onclick="runCleanup('clean-cache')" class="btn btn-secondary expandable-btn">
+                             🧠 Clean Cache
+                             <span class="expand-icon">▼</span>
+                         </button>
+                         <div class="expandable-content">
+                             <div class="button-info">
+                                 <h4>Cache File Cleanup</h4>
+                                 <p>Removes temporary cache files from system and application directories. Safe to run regularly as cache files can be regenerated.</p>
+                                 <div class="customizations">
+                                     <h5>⚙️ Customizations:</h5>
+                                     <label><input type="checkbox" id="cache-aggressive" checked> Aggressive cleanup (older files)</label><br>
+                                     <label><input type="checkbox" id="cache-system-only"> System caches only</label><br>
+                                     <label>Max age: <input type="number" id="cache-max-age" value="30" min="1"> days</label><br>
+                                     <label>Min file size: <input type="number" id="cache-min-size" value="0" min="0"> bytes</label>
+                                 </div>
+                             </div>
+                         </div>
+                     </div>
+
+                     <div class="expandable-button">
+                         <button onclick="runCleanup('clean-temp')" class="btn btn-secondary expandable-btn">
+                             🗑️ Clean Temp Files
+                             <span class="expand-icon">▼</span>
+                         </button>
+                         <div class="expandable-content">
+                             <div class="button-info">
+                                 <h4>Temporary Files Cleanup</h4>
+                                 <p>Cleans temporary files, downloads, and other ephemeral data that accumulates during normal system usage.</p>
+                                 <div class="customizations">
+                                     <h5>⚙️ Customizations:</h5>
+                                     <label><input type="checkbox" id="temp-preserve-recent" checked> Preserve files < 24h old</label><br>
+                                     <label><input type="checkbox" id="temp-safe-extensions" checked> Skip critical file types</label><br>
+                                     <label>Max age: <input type="number" id="temp-max-age" value="7" min="1"> days</label><br>
+                                     <label><input type="checkbox" id="temp-empty-dirs"> Remove empty directories</label>
+                                 </div>
+                             </div>
+                         </div>
+                     </div>
+
+                     <div class="expandable-button">
+                         <button onclick="runCleanup('clean-dev')" class="btn btn-secondary expandable-btn">
+                             💻 Clean Dev Files
+                             <span class="expand-icon">▼</span>
+                         </button>
+                         <div class="expandable-content">
+                             <div class="button-info">
+                                 <h4>Development Environment Cleanup</h4>
+                                 <p>Cleans development artifacts like node_modules, build directories, cache files, and other development-related temporary files.</p>
+                                 <div class="customizations">
+                                     <h5>⚙️ Customizations:</h5>
+                                     <label><input type="checkbox" id="dev-active-projects" checked> Protect active projects</label><br>
+                                     <label><input type="checkbox" id="dev-node-modules"> Include node_modules</label><br>
+                                     <label><input type="checkbox" id="dev-build-dirs" checked> Include build directories</label><br>
+                                     <label>Max age: <input type="number" id="dev-max-age" value="14" min="1"> days</label>
+                                 </div>
+                             </div>
+                         </div>
+                     </div>
+
+                     <div class="expandable-button">
+                         <button onclick="runCleanup('clean-all')" class="btn btn-danger expandable-btn">
+                             🚀 Complete Cleanup
+                             <span class="expand-icon">▼</span>
+                         </button>
+                         <div class="expandable-content">
+                             <div class="button-info">
+                                 <h4>Complete System Cleanup</h4>
+                                 <p>Runs all cleanup operations in sequence: cache, temp files, development files, and system optimization.</p>
+                                 <div class="customizations">
+                                     <h5>⚙️ Customizations:</h5>
+                                     <label><input type="checkbox" id="all-confirm" checked> Require confirmation</label><br>
+                                     <label><input type="checkbox" id="all-backup"> Create backup before cleanup</label><br>
+                                     <label><input type="checkbox" id="all-report" checked> Generate completion report</label><br>
+                                     <label>Operations: <select id="all-operations" multiple>
+                                         <option value="cache" selected>Cache Cleanup</option>
+                                         <option value="temp" selected>Temp Files</option>
+                                         <option value="dev" selected>Dev Files</option>
+                                         <option value="system">System Optimization</option>
+                                     </select></label>
+                                 </div>
+                             </div>
+                         </div>
+                     </div>
+
+                     <div class="expandable-button">
+                         <button onclick="createMaintenanceChain()" class="btn btn-success expandable-btn">
+                             🔄 Smart Maintenance Chain
+                             <span class="expand-icon">▼</span>
+                         </button>
+                         <div class="expandable-content">
+                             <div class="button-info">
+                                 <h4>Automated Maintenance Chain</h4>
+                                 <p>Creates a smart sequence of cleanup operations optimized for your system's current state and usage patterns.</p>
+                                 <div class="customizations">
+                                     <h5>⚙️ Customizations:</h5>
+                                     <label><input type="checkbox" id="chain-auto-execute" checked> Auto-execute chain</label><br>
+                                     <label><input type="checkbox" id="chain-schedule"> Schedule for later</label><br>
+                                     <label>Priority: <select id="chain-priority">
+                                         <option value="speed">Speed Optimized</option>
+                                         <option value="thoroughness" selected>Thoroughness Optimized</option>
+                                         <option value="balanced">Balanced</option>
+                                     </select></label><br>
+                                     <label>Max duration: <input type="number" id="chain-max-time" value="30" min="5"> minutes</label>
+                                 </div>
+                             </div>
+                         </div>
+                     </div>
+                 </div>
+             </div>
+
+             <!-- Task Management Section -->
+             <div class="task-management-section">
+                 <h2>⚙️ Task Management</h2>
+                  <div class="task-controls">
+                      <div class="expandable-button">
+                          <button onclick="loadTaskQueue()" class="btn btn-info expandable-btn">
+                              📋 Refresh Task Queue
+                              <span class="expand-icon">▼</span>
+                          </button>
+                          <div class="expandable-content">
+                              <div class="button-info">
+                                  <h4>Task Queue Refresh</h4>
+                                  <p>Refresh the task queue display to show the latest status of all running and queued cleanup operations.</p>
+                                  <div class="customizations">
+                                      <h5>⚙️ Customizations:</h5>
+                                      <label><input type="checkbox" id="queue-auto-refresh" checked> Enable auto-refresh</label><br>
+                                      <label><input type="checkbox" id="queue-show-completed"> Show completed tasks</label><br>
+                                      <label>Refresh interval: <input type="number" id="queue-refresh-interval" value="30" min="5" max="300"> seconds</label><br>
+                                      <label>Max tasks shown: <input type="number" id="queue-max-tasks" value="50" min="10" max="200"></label>
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+
+                      <div class="expandable-button">
+                          <button onclick="createMaintenanceChain()" class="btn btn-primary expandable-btn">
+                              🔄 Create Maintenance Chain
+                              <span class="expand-icon">▼</span>
+                          </button>
+                          <div class="expandable-content">
+                              <div class="button-info">
+                                  <h4>Maintenance Chain Builder</h4>
+                                  <p>Create a custom sequence of cleanup operations that run in order, with dependencies and error handling.</p>
+                                  <div class="customizations">
+                                      <h5>⚙️ Customizations:</h5>
+                                      <label><input type="checkbox" id="chain-save-template"> Save as template</label><br>
+                                      <label><input type="checkbox" id="chain-enable-rollback"> Enable rollback on failure</label><br>
+                                      <label><input type="checkbox" id="chain-parallel-execution"> Allow parallel execution</label><br>
+                                      <label>Chain priority: <select id="chain-priority">
+                                          <option value="low">Low</option>
+                                          <option value="normal" selected>Normal</option>
+                                          <option value="high">High</option>
+                                          <option value="critical">Critical</option>
+                                      </select></label>
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+
+                      <div class="expandable-button">
+                          <button onclick="testBrowserAutomation()" class="btn btn-secondary expandable-btn">
+                              🌐 Test Browser Automation
+                              <span class="expand-icon">▼</span>
+                          </button>
+                          <div class="expandable-content">
+                              <div class="button-info">
+                                  <h4>Browser Automation Testing</h4>
+                                  <p>Test browser automation capabilities for web scraping, form filling, and automated interactions.</p>
+                                  <div class="customizations">
+                                      <h5>⚙️ Customizations:</h5>
+                                      <label><input type="checkbox" id="browser-headless" checked> Run in headless mode</label><br>
+                                      <label><input type="checkbox" id="browser-screenshots"> Capture screenshots</label><br>
+                                      <label><input type="checkbox" id="browser-save-logs"> Save detailed logs</label><br>
+                                      <label>Browser: <select id="browser-type">
+                                          <option value="chrome" selected>Chrome</option>
+                                          <option value="firefox">Firefox</option>
+                                          <option value="safari">Safari</option>
+                                      </select></label>
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+
+                      <div class="expandable-button">
+                          <button onclick="startBrowserCollection()" class="btn btn-warning expandable-btn">
+                              🤖 Start AI Chat Collection
+                              <span class="expand-icon">▼</span>
+                          </button>
+                          <div class="expandable-content">
+                              <div class="button-info">
+                                  <h4>AI Chat Data Collection</h4>
+                                  <p>Start collecting chat conversations and AI interactions for analysis and improvement of the AI assistant.</p>
+                                  <div class="customizations">
+                                      <h5>⚙️ Customizations:</h5>
+                                      <label><input type="checkbox" id="collection-anonymous"> Anonymous collection</label><br>
+                                      <label><input type="checkbox" id="collection-include-metadata" checked> Include metadata</label><br>
+                                      <label><input type="checkbox" id="collection-auto-export"> Auto-export data</label><br>
+                                      <label>Collection duration: <input type="number" id="collection-duration" value="60" min="5" max="480"> minutes</label>
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+                 <div id="task-queue-display" class="task-queue-display">
+                     <p>Loading task queue...</p>
+                 </div>
+             </div>
+
+             <div class="results-section">
+                 <h2>Results</h2>
+                 <div id="results-container">
+                     <p>Click an action above to start cleanup operations.</p>
+                 </div>
+             </div>
+         </div>
+
+         <!-- System Tab Content -->
+         <div id="system-content" class="tab-content">
+             <div class="system-section">
+                 <h2>🔧 System Management</h2>
+                  <div class="system-buttons">
+                      <div class="expandable-button">
+                          <button onclick="runCleanup('system')" class="btn btn-info expandable-btn">
+                              📊 System Analysis
+                              <span class="expand-icon">▼</span>
+                          </button>
+                          <div class="expandable-content">
+                              <div class="button-info">
+                                  <h4>System Analysis</h4>
+                                  <p>Performs comprehensive analysis of your system's storage, memory, CPU usage, and identifies potential optimization opportunities.</p>
+                                  <div class="customizations">
+                                      <h5>⚙️ Customizations:</h5>
+                                      <label><input type="checkbox" id="system-deep-scan" checked> Deep system scan</label><br>
+                                      <label><input type="checkbox" id="system-generate-report" checked> Generate analysis report</label><br>
+                                      <label><input type="checkbox" id="system-check-updates"> Check for system updates</label><br>
+                                      <label>Analysis depth: <select id="system-depth">
+                                          <option value="quick">Quick</option>
+                                          <option value="standard" selected>Standard</option>
+                                          <option value="comprehensive">Comprehensive</option>
+                                      </select></label>
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+
+                      <div class="expandable-button">
+                          <button onclick="runCleanup('report')" class="btn btn-info expandable-btn">
+                              📋 Generate Report
+                              <span class="expand-icon">▼</span>
+                          </button>
+                          <div class="expandable-content">
+                              <div class="button-info">
+                                  <h4>Cleanup Report Generation</h4>
+                                  <p>Generates detailed reports of all cleanup operations, duplicate files found, space saved, and system optimization recommendations.</p>
+                                  <div class="customizations">
+                                      <h5>⚙️ Customizations:</h5>
+                                      <label><input type="checkbox" id="report-include-charts" checked> Include charts and graphs</label><br>
+                                      <label><input type="checkbox" id="report-export-pdf"> Export as PDF</label><br>
+                                      <label><input type="checkbox" id="report-email-report"> Email report</label><br>
+                                      <label>Report format: <select id="report-format">
+                                          <option value="html" selected>HTML</option>
+                                          <option value="json">JSON</option>
+                                          <option value="csv">CSV</option>
+                                      </select></label>
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+
+                      <div class="expandable-button">
+                          <button onclick="toggleDaemon()" class="btn btn-warning expandable-btn" id="daemon-btn">
+                              ▶️ Start Daemon
+                              <span class="expand-icon">▼</span>
+                          </button>
+                          <div class="expandable-content">
+                              <div class="button-info">
+                                  <h4>Background Daemon Service</h4>
+                                  <p>Starts a background service that automatically monitors your system and performs scheduled cleanup operations.</p>
+                                  <div class="customizations">
+                                      <h5>⚙️ Customizations:</h5>
+                                      <label><input type="checkbox" id="daemon-auto-start" checked> Auto-start on system boot</label><br>
+                                      <label><input type="checkbox" id="daemon-notifications"> Enable notifications</label><br>
+                                      <label>Cleanup interval: <select id="daemon-interval">
+                                          <option value="1">Every hour</option>
+                                          <option value="6" selected>Every 6 hours</option>
+                                          <option value="12">Every 12 hours</option>
+                                          <option value="24">Daily</option>
+                                      </select></label><br>
+                                      <label>Max CPU usage: <input type="number" id="daemon-cpu-limit" value="20" min="5" max="50">%</label>
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+
+                      <div class="expandable-button">
+                          <button onclick="showConfig()" class="btn btn-secondary expandable-btn">
+                              ⚙️ View Config
+                              <span class="expand-icon">▼</span>
+                          </button>
+                          <div class="expandable-content">
+                              <div class="button-info">
+                                  <h4>Configuration Viewer</h4>
+                                  <p>View and manage TidyMe's configuration settings including exclusions, scan parameters, and system preferences.</p>
+                                  <div class="customizations">
+                                      <h5>⚙️ Customizations:</h5>
+                                      <label><input type="checkbox" id="config-show-advanced"> Show advanced settings</label><br>
+                                      <label><input type="checkbox" id="config-validate-settings" checked> Validate settings on load</label><br>
+                                      <label><input type="checkbox" id="config-backup-config"> Create config backup</label><br>
+                                      <label>View mode: <select id="config-view-mode">
+                                          <option value="formatted" selected>Formatted</option>
+                                          <option value="raw">Raw JSON</option>
+                                          <option value="table">Table View</option>
+                                      </select></label>
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+
+                      <div class="expandable-button">
+                          <button onclick="showFileBrowser()" class="btn btn-primary expandable-btn">
+                              📁 File Browser
+                              <span class="expand-icon">▼</span>
+                          </button>
+                          <div class="expandable-content">
+                              <div class="button-info">
+                                  <h4>Interactive File Browser</h4>
+                                  <p>Browse your file system with safety restrictions, preview file contents, and identify cleanup candidates.</p>
+                                  <div class="customizations">
+                                      <h5>⚙️ Customizations:</h5>
+                                      <label><input type="checkbox" id="browser-show-hidden"> Show hidden files</label><br>
+                                      <label><input type="checkbox" id="browser-show-sizes" checked> Show file sizes</label><br>
+                                      <label><input type="checkbox" id="browser-preview-enabled" checked> Enable file preview</label><br>
+                                      <label>Default path: <input type="text" id="browser-default-path" value="/Users" placeholder="/Users"></label>
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+
+                      <div class="expandable-button">
+                          <button onclick="showExcludeManager()" class="btn btn-secondary expandable-btn">
+                              🚫 Exclude Manager
+                              <span class="expand-icon">▼</span>
+                          </button>
+                          <div class="expandable-content">
+                              <div class="button-info">
+                                  <h4>Exclusion Pattern Manager</h4>
+                                  <p>Manage directories and file patterns that should be excluded from cleanup operations to protect important data.</p>
+                              <div class="customizations">
+                                  <h5>⚙️ Customizations:</h5>
+                                  <label><input type="checkbox" id="exclude-case-sensitive"> Case sensitive patterns</label><br>
+                                  <label><input type="checkbox" id="exclude-use-regex"> Use regex patterns</label><br>
+                                  <label><input type="checkbox" id="exclude-auto-add" checked> Auto-add common safe patterns</label><br>
+                                  <label>Pattern type: <select id="exclude-pattern-type">
+                                      <option value="glob" selected>Glob patterns</option>
+                                      <option value="regex">Regular expressions</option>
+                                      <option value="literal">Literal paths</option>
+                                  </select></label>
+                              </div>
+                          </div>
+                      </div>
+
+                      <div class="expandable-button">
+                          <button onclick="runHealthCheck()" class="btn btn-success expandable-btn">
+                              🏥 Health Check
+                              <span class="expand-icon">▼</span>
+                          </button>
+                          <div class="expandable-content">
+                              <div class="button-info">
+                                  <h4>System Health Assessment</h4>
+                                  <p>Comprehensive health check of your system's storage, memory, CPU, and overall performance metrics.</p>
+                              <div class="customizations">
+                                  <h5>⚙️ Customizations:</h5>
+                                  <label><input type="checkbox" id="health-detailed-metrics" checked> Detailed metrics</label><br>
+                                  <label><input type="checkbox" id="health-benchmark-tests"> Run benchmark tests</label><br>
+                                  <label><input type="checkbox" id="health-generate-timeline"> Generate health timeline</label><br>
+                                  <label>Check frequency: <select id="health-frequency">
+                                      <option value="quick">Quick (30s)</option>
+                                      <option value="standard" selected>Standard (2min)</option>
+                                      <option value="comprehensive">Comprehensive (5min)</option>
+                                  </select></label>
+                              </div>
+                          </div>
+                      </div>
+
+                      <div class="expandable-button">
+                          <button onclick="optimizeMemory()" class="btn btn-warning expandable-btn">
+                              🧠 Memory Opt.
+                              <span class="expand-icon">▼</span>
+                          </button>
+                          <div class="expandable-content">
+                              <div class="button-info">
+                                  <h4>Memory Optimization</h4>
+                                  <p>Optimize system memory usage by clearing caches, terminating unused processes, and defragmenting memory.</p>
+                              <div class="customizations">
+                                  <h5>⚙️ Customizations:</h5>
+                                  <label><input type="checkbox" id="memory-aggressive-cleanup"> Aggressive cleanup</label><br>
+                                  <label><input type="checkbox" id="memory-preserve-critical" checked> Preserve critical processes</label><br>
+                                  <label><input type="checkbox" id="memory-compress-pages"> Enable memory compression</label><br>
+                                  <label>Target free memory: <input type="number" id="memory-target-free" value="2048" min="512" max="8192"> MB</label>
+                              </div>
+                          </div>
+                      </div>
+
+                      <div class="expandable-button">
+                          <button onclick="startServer()" class="btn btn-primary expandable-btn">
+                              🚀 Start Server
+                              <span class="expand-icon">▼</span>
+                          </button>
+                          <div class="expandable-content">
+                              <div class="button-info">
+                                  <h4>Web Server Control</h4>
+                                  <p>Start the TidyMe web server to enable the web interface and API endpoints for remote management.</p>
+                              <div class="customizations">
+                                  <h5>⚙️ Customizations:</h5>
+                                  <label><input type="checkbox" id="server-auto-restart"> Auto-restart on failure</label><br>
+                                  <label><input type="checkbox" id="server-enable-ssl"> Enable SSL/TLS</label><br>
+                                  <label>Port: <input type="number" id="server-port" value="5000" min="1024" max="65535"></label><br>
+                                  <label>Host: <select id="server-host">
+                                      <option value="localhost" selected>localhost only</option>
+                                      <option value="0.0.0.0">All interfaces</option>
+                                  </select></label>
+                              </div>
+                          </div>
+                      </div>
+
+                      <div class="expandable-button">
+                          <button onclick="checkServerStatus()" class="btn btn-info expandable-btn">
+                              📊 Server Status
+                              <span class="expand-icon">▼</span>
+                          </button>
+                          <div class="expandable-content">
+                              <div class="button-info">
+                                  <h4>Server Status Monitor</h4>
+                                  <p>Check the current status of the web server, including uptime, active connections, and performance metrics.</p>
+                              <div class="customizations">
+                                  <h5>⚙️ Customizations:</h5>
+                                  <label><input type="checkbox" id="status-show-connections" checked> Show active connections</label><br>
+                                  <label><input type="checkbox" id="status-show-performance"> Show performance metrics</label><br>
+                                  <label><input type="checkbox" id="status-auto-refresh"> Auto-refresh every 30s</label><br>
+                                  <label>Detail level: <select id="status-detail-level">
+                                      <option value="basic" selected>Basic</option>
+                                      <option value="detailed">Detailed</option>
+                                      <option value="debug">Debug</option>
+                                  </select></label>
+                              </div>
+                          </div>
+                      </div>
+
+                      <div class="expandable-button">
+                          <button onclick="showVault()" class="btn btn-warning expandable-btn">
+                              🔐 Secure Vault
+                              <span class="expand-icon">▼</span>
+                          </button>
+                          <div class="expandable-content">
+                              <div class="button-info">
+                                  <h4>Secure Credential Vault</h4>
+                                  <p>Store sensitive information like API keys, passwords, and configuration securely using macOS Keychain.</p>
+                              <div class="customizations">
+                                  <h5>⚙️ Customizations:</h5>
+                                  <label><input type="checkbox" id="vault-enable-encryption" checked> Enable encryption</label><br>
+                                  <label><input type="checkbox" id="vault-auto-backup"> Auto-backup vault</label><br>
+                                  <label><input type="checkbox" id="vault-enable-sharing"> Enable secure sharing</label><br>
+                                  <label>Storage method: <select id="vault-storage-method">
+                                      <option value="keychain" selected>macOS Keychain</option>
+                                      <option value="database">Database</option>
+                                      <option value="hybrid">Hybrid</option>
+                                  </select></label>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+             </div>
+
+             <div class="document-processing">
+                 <h2>📄 Document Processing</h2>
+
+                 <!-- Processing Statistics -->
+                 <div class="processing-stats">
+                     <div class="stat-item">
+                         <span class="stat-label">Files in Queue:</span>
+                         <span class="stat-value" id="queue-count">0</span>
+                     </div>
+                     <div class="stat-item">
+                         <span class="stat-label">Files Processed:</span>
+                         <span class="stat-value" id="processed-count">0</span>
+                     </div>
+                     <div class="stat-item">
+                         <span class="stat-label">Time Remaining:</span>
+                         <span class="stat-value" id="time-estimate">--:--</span>
+                     </div>
+                     <div class="stat-item">
+                         <span class="stat-label">Processing Speed:</span>
+                         <span class="stat-value" id="processing-speed">0 files/min</span>
+                     </div>
+                 </div>
+
+                 <!-- Progress Bar -->
+                 <div class="progress-container">
+                     <div class="progress-bar">
+                         <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+                     </div>
+                     <div class="progress-text" id="progress-text">0% Complete</div>
+                 </div>
+
+                  <div class="processing-controls">
+                      <div class="processing-status" id="processing-status">
+                          <span class="status-indicator">⚪</span>
+                          <span>Background processing: Idle</span>
+                      </div>
+                      <div class="processing-actions">
+                          <div class="expandable-button">
+                              <button onclick="startDocumentProcessing()" class="btn btn-primary expandable-btn" id="process-btn">
+                                  ▶️ Start Processing
+                                  <span class="expand-icon">▼</span>
+                              </button>
+                              <div class="expandable-content">
+                                  <div class="button-info">
+                                      <h4>Document Processing Engine</h4>
+                                      <p>Start the background document processing engine that analyzes, categorizes, and optimizes document files.</p>
+                                      <div class="customizations">
+                                          <h5>⚙️ Customizations:</h5>
+                                          <label><input type="checkbox" id="process-auto-queue"> Auto-queue new documents</label><br>
+                                          <label><input type="checkbox" id="process-parallel-processing" checked> Enable parallel processing</label><br>
+                                          <label><input type="checkbox" id="process-generate-previews"> Generate previews</label><br>
+                                          <label>Processing priority: <select id="process-priority">
+                                              <option value="low">Low</option>
+                                              <option value="normal" selected>Normal</option>
+                                              <option value="high">High</option>
+                                          </select></label>
+                                      </div>
+                                  </div>
+                              </div>
+                          </div>
+
+                          <div class="expandable-button">
+                              <button onclick="viewProcessingQueue()" class="btn btn-info expandable-btn">
+                                  📋 View Queue
+                                  <span class="expand-icon">▼</span>
+                              </button>
+                              <div class="expandable-content">
+                                  <div class="button-info">
+                                      <h4>Processing Queue Viewer</h4>
+                                      <p>View the current document processing queue with status, progress, and detailed information about each item.</p>
+                                      <div class="customizations">
+                                          <h5>⚙️ Customizations:</h5>
+                                          <label><input type="checkbox" id="queue-show-details" checked> Show detailed info</label><br>
+                                          <label><input type="checkbox" id="queue-show-progress"> Show progress bars</label><br>
+                                          <label><input type="checkbox" id="queue-auto-scroll"> Auto-scroll to active</label><br>
+                                          <label>Items per page: <input type="number" id="queue-page-size" value="20" min="5" max="100"></label>
+                                      </div>
+                                  </div>
+                              </div>
+                          </div>
+
+                          <div class="expandable-button">
+                              <button onclick="clearProcessingQueue()" class="btn btn-warning expandable-btn">
+                                  🗑️ Clear Queue
+                                  <span class="expand-icon">▼</span>
+                              </button>
+                              <div class="expandable-content">
+                                  <div class="button-info">
+                                      <h4>Queue Management</h4>
+                                      <p>Clear the document processing queue, with options to selectively remove items or reset the entire queue.</p>
+                                      <div class="customizations">
+                                          <h5>⚙️ Customizations:</h5>
+                                          <label><input type="checkbox" id="clear-confirm-action" checked> Require confirmation</label><br>
+                                          <label><input type="checkbox" id="clear-save-incomplete"> Save incomplete items</label><br>
+                                          <label><input type="checkbox" id="clear-reset-statistics"> Reset statistics</label><br>
+                                          <label>Clear scope: <select id="clear-scope">
+                                              <option value="all" selected>All items</option>
+                                              <option value="completed">Completed only</option>
+                                              <option value="failed">Failed only</option>
+                                              <option value="pending">Pending only</option>
+                                          </select></label>
+                                      </div>
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+
+                 <!-- Processing Queue Display -->
+                 <div class="queue-display">
+                     <h3>📋 Processing Queue</h3>
+                     <div id="queue-list" class="queue-list">
+                         <p class="empty-queue">Queue is empty</p>
+                     </div>
+                 </div>
+
+                 <div id="processing-results">
+                     <p>No documents processed yet. Click "Start Processing" to begin.</p>
+                 </div>
+             </div>
+         </div>
+
+         <!-- Monitoring Tab Content -->
+         <div id="monitoring-content" class="tab-content">
+             <div class="health-monitoring">
+                 <h2>🔍 System Monitoring</h2>
+                  <div class="monitoring-controls">
+                      <div class="expandable-button">
+                          <button onclick="toggleAutoMonitoring()" class="btn btn-primary expandable-btn" id="auto-monitor-btn">
+                              ▶️ Start Auto-Monitoring
+                              <span class="expand-icon">▼</span>
+                          </button>
+                          <div class="expandable-content">
+                              <div class="button-info">
+                                  <h4>Automated System Monitoring</h4>
+                                  <p>Enable continuous monitoring of system health, performance metrics, and automatic alerts for issues.</p>
+                                  <div class="customizations">
+                                      <h5>⚙️ Customizations:</h5>
+                                      <label><input type="checkbox" id="monitor-cpu-alerts" checked> CPU usage alerts</label><br>
+                                      <label><input type="checkbox" id="monitor-memory-alerts" checked> Memory usage alerts</label><br>
+                                      <label><input type="checkbox" id="monitor-disk-alerts" checked> Disk space alerts</label><br>
+                                      <label>Alert threshold: <input type="number" id="monitor-alert-threshold" value="80" min="50" max="95">%</label>
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+
+                      <div class="expandable-button">
+                          <button onclick="analyzeLogs()" class="btn btn-info expandable-btn">
+                              📋 Analyze Logs
+                              <span class="expand-icon">▼</span>
+                          </button>
+                          <div class="expandable-content">
+                              <div class="button-info">
+                                  <h4>System Log Analysis</h4>
+                                  <p>Analyze system logs for errors, warnings, and patterns that indicate potential issues or optimization opportunities.</p>
+                                  <div class="customizations">
+                                      <h5>⚙️ Customizations:</h5>
+                                      <label><input type="checkbox" id="logs-include-system" checked> Include system logs</label><br>
+                                      <label><input type="checkbox" id="logs-include-app"> Include application logs</label><br>
+                                      <label><input type="checkbox" id="logs-generate-report" checked> Generate analysis report</label><br>
+                                      <label>Analysis period: <select id="logs-period">
+                                          <option value="1h">Last hour</option>
+                                          <option value="24h" selected>Last 24 hours</option>
+                                          <option value="7d">Last 7 days</option>
+                                          <option value="30d">Last 30 days</option>
+                                      </select></label>
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+
+                      <div class="expandable-button">
+                          <button onclick="smartCacheCleanup()" class="btn btn-warning expandable-btn">
+                              🗂️ Smart Cache Cleanup
+                              <span class="expand-icon">▼</span>
+                          </button>
+                          <div class="expandable-content">
+                              <div class="button-info">
+                                  <h4>Intelligent Cache Management</h4>
+                                  <p>Smart cleanup of cache files based on usage patterns, file age, and system requirements.</p>
+                              <div class="customizations">
+                                  <h5>⚙️ Customizations:</h5>
+                                  <label><input type="checkbox" id="cache-smart-analysis" checked> Use smart analysis</label><br>
+                                  <label><input type="checkbox" id="cache-preserve-frequent"> Preserve frequently used</label><br>
+                                  <label><input type="checkbox" id="cache-clean-empty-dirs"> Clean empty directories</label><br>
+                                  <label>Intelligence level: <select id="cache-intelligence">
+                                      <option value="basic">Basic</option>
+                                      <option value="smart" selected>Smart</option>
+                                      <option value="advanced">Advanced AI</option>
+                                  </select></label>
+                              </div>
+                          </div>
+                      </div>
+
+                      <div class="expandable-button">
+                          <button onclick="analyzeDocuments()" class="btn btn-info expandable-btn">
+                              📄 Document Analysis
+                              <span class="expand-icon">▼</span>
+                          </button>
+                          <div class="expandable-content">
+                              <div class="button-info">
+                                  <h4>Document Content Analysis</h4>
+                                  <p>Analyze document contents for duplicates, outdated information, and optimization opportunities.</p>
+                              <div class="customizations">
+                                  <h5>⚙️ Customizations:</h5>
+                                  <label><input type="checkbox" id="docs-text-analysis" checked> Text content analysis</label><br>
+                                  <label><input type="checkbox" id="docs-metadata-scan"> Metadata scanning</label><br>
+                                  <label><input type="checkbox" id="docs-duplicate-detection"> Duplicate detection</label><br>
+                                  <label>Document types: <select id="docs-types" multiple>
+                                      <option value="pdf" selected>PDF</option>
+                                      <option value="docx" selected>Word</option>
+                                      <option value="txt" selected>Text</option>
+                                      <option value="md">Markdown</option>
+                                  </select></label>
+                              </div>
+                          </div>
+                      </div>
+
+                      <div class="expandable-button">
+                          <button onclick="filterArtifacts()" class="btn btn-secondary expandable-btn">
+                              🔍 Filter Artifacts
+                              <span class="expand-icon">▼</span>
+                          </button>
+                          <div class="expandable-content">
+                              <div class="button-info">
+                                  <h4>Artifact Filtering</h4>
+                                  <p>Filter and categorize system artifacts, temporary files, and development remnants for targeted cleanup.</p>
+                              <div class="customizations">
+                                  <h5>⚙️ Customizations:</h5>
+                                  <label><input type="checkbox" id="filter-by-type" checked> Filter by file type</label><br>
+                                  <label><input type="checkbox" id="filter-by-age"> Filter by age</label><br>
+                                  <label><input type="checkbox" id="filter-by-size"> Filter by size</label><br>
+                                  <label>Filter criteria: <select id="filter-criteria">
+                                      <option value="aggressive">Aggressive</option>
+                                      <option value="moderate" selected>Moderate</option>
+                                      <option value="conservative">Conservative</option>
+                                  </select></label>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+                 <div id="monitoring-status">
+                     <p>Auto-monitoring is currently disabled.</p>
+                 </div>
+             </div>
+
+             <div class="ai-insights">
+                 <h2>🤖 AI Insights</h2>
+                 <div id="ai-insights">
+                     <p>Loading AI insights...</p>
+                 </div>
+             </div>
+
+             <div class="recent-activity">
+                 <h2>Recent Activity</h2>
+                 <div id="activity-log">
+                     <p>Loading recent activity...</p>
+                 </div>
+             </div>
+         </div>
+
+         <!-- Reports Tab Content -->
+         <div id="reports-content" class="tab-content">
+             <div class="reports-section">
+                 <h2>📊 Detailed Reports</h2>
+                 <div class="report-tabs">
+                     <button onclick="showReport('scans')" class="tab-btn active" id="scans-tab">Scans</button>
+                     <button onclick="showReport('duplicates')" class="tab-btn" id="duplicates-tab">Duplicates</button>
+                     <button onclick="showReport('cleanup')" class="tab-btn" id="cleanup-tab">Cleanup Log</button>
+                     <button onclick="showReport('ai')" class="tab-btn" id="ai-tab">AI Analysis</button>
+                 </div>
+                 <div id="report-content">
+                     <p>Select a report type above to view detailed information.</p>
+                 </div>
+             </div>
+          </div>
+
+          <!-- AI Tab Content -->
+          <div id="ai-content" class="tab-content">
+              <div class="ai-section">
+                  <h2>🤖 AI Assistant</h2>
+
+                  <div class="ai-chat-section">
+                      <div class="chat-container">
+                          <div id="ai-chat-messages" class="chat-messages">
+                              <div class="message ai-message">
+                                  <strong>AI:</strong> Hello! I'm your intelligent cleanup assistant. I can help you with:
+                                  <ul>
+                                      <li>Analyzing your cleanup needs</li>
+                                      <li>Providing optimization recommendations</li>
+                                      <li>Answering questions about system maintenance</li>
+                                      <li>Generating detailed reports</li>
+                                  </ul>
+                                  What would you like to know?
+                              </div>
+                          </div>
+
+                          <div class="chat-input-section">
+                              <div class="chat-controls">
+                                  <select id="ai-model-selector" class="model-selector">
+                                      <option value="tinyllama:1.1b">TinyLlama 1.1B (Fast)</option>
+                                      <option value="llama3.2:3b">Llama 3.2 3B (Recommended)</option>
+                                      <option value="granite-code:3b">Granite Code 3B (Code)</option>
+                                      <option value="moondream:latest">Moondream (Vision)</option>
+                                      <option value="nomic-embed-text:latest">Nomic Embed (Embeddings)</option>
+                                  </select>
+                                  <button onclick="clearAIChat()" class="btn btn-secondary">Clear Chat</button>
+                              </div>
+
+                              <div class="chat-input-container">
+                                  <input type="text" id="ai-chat-input" placeholder="Ask me about cleanup, optimization, or system health..." onkeypress="handleAIChatKeyPress(event)">
+                                  <button onclick="sendAIMessage()" class="btn btn-primary">Send</button>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+
+                  <div class="ai-features-grid">
+                      <div class="ai-feature-card">
+                          <h3>📊 Smart Analysis</h3>
+                          <p>Get AI-powered insights about your system's cleanup needs and optimization opportunities.</p>
+                          <button onclick="getAIAnalysis()" class="btn btn-primary">Analyze System</button>
+                      </div>
+
+                      <div class="ai-feature-card">
+                          <h3>🔮 Cleanup Predictions</h3>
+                          <p>Predict future cleanup needs and get proactive recommendations.</p>
+                          <button onclick="getCleanupPredictions()" class="btn btn-primary">Get Predictions</button>
+                      </div>
+
+                      <div class="ai-feature-card">
+                          <h3>📈 Pattern Analysis</h3>
+                          <p>Analyze cleanup patterns and trends over time.</p>
+                          <button onclick="analyzePatterns()" class="btn btn-primary">Analyze Patterns</button>
+                      </div>
+
+                      <div class="ai-feature-card">
+                          <h3>💡 Optimization Tips</h3>
+                          <p>Get personalized tips for maintaining system performance.</p>
+                          <button onclick="getOptimizationTips()" class="btn btn-primary">Get Tips</button>
+                      </div>
+                  </div>
+
+                  <div class="ai-insights-panel">
+                      <h3>🧠 AI Insights</h3>
+                      <div id="ai-insights-panel">
+                          <p>Click "Analyze System" to get AI-powered insights...</p>
+                      </div>
+                  </div>
+              </div>
+          </div>
+
+         <!-- Modal for config viewing -->
+        <div id="config-modal" class="modal">
+            <div class="modal-content">
+                <span class="close" onclick="closeModal()">&times;</span>
+                <h2>Configuration Settings</h2>
+                <pre id="config-content">Loading configuration...</pre>
+            </div>
+        </div>
+
+        <!-- Modal for file browser -->
+        <div id="file-browser-modal" class="modal">
+            <div class="modal-content large-modal">
+                <span class="close" onclick="closeFileBrowserModal()">&times;</span>
+                <h2>📁 File Browser</h2>
+                <div class="file-browser-controls">
+                    <input type="text" id="current-path" placeholder="Enter path..." value="/Users">
+                    <button onclick="loadDirectory()" class="btn btn-primary">Load</button>
+                    <button onclick="goUp()" class="btn btn-secondary">⬆️ Up</button>
+                </div>
+                <div id="file-list" class="file-list">
+                    <p>Loading files...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal for exclude manager -->
+        <div id="exclude-modal" class="modal">
+            <div class="modal-content large-modal">
+                <span class="close" onclick="closeExcludeModal()">&times;</span>
+                <h2>🚫 Exclude Manager</h2>
+                <div class="exclude-controls">
+                    <input type="text" id="new-exclude" placeholder="Add path to exclude...">
+                    <button onclick="addExclude()" class="btn btn-primary">Add</button>
+                    <button onclick="saveExcludes()" class="btn btn-success">Save Changes</button>
+                </div>
+                <div id="exclude-list" class="exclude-list">
+                    <p>Loading exclude patterns...</p>
+                </div>
+            </div>
+        </div>
+
+         <!-- AI Chat Modal -->
+         <div id="ai-chat-modal" class="modal">
+             <div class="modal-content chat-modal">
+                 <span class="close" onclick="closeChatModal()">&times;</span>
+                 <h2>🤖 AI Assistant</h2>
+                  <div id="chat-queue-status" class="chat-queue-status" style="display: none;"></div>
+                  <div id="chat-messages" class="chat-messages">
+                      <div class="message ai-message">
+                          <strong>AI:</strong> Hello! I'm your cleanup assistant. Ask me anything about system cleanup, file management, or optimization tips!
+                      </div>
+                  </div>
+                  <div class="chat-input">
+                      <select id="chat-model" class="model-selector">
+                          <option value="tinyllama:1.1b">TinyLlama 1.1B (Fast)</option>
+                          <option value="llama3.2:3b">Llama 3.2 3B (Recommended)</option>
+                          <option value="granite-code:3b">Granite Code 3B (Code)</option>
+                          <option value="moondream:latest">Moondream (Vision)</option>
+                          <option value="nomic-embed-text:latest">Nomic Embed (Embeddings)</option>
+                      </select>
+                      <input type="text" id="chat-input" placeholder="Ask me about cleanup..." onkeypress="handleChatKeyPress(event)">
+                      <button onclick="sendChatMessage()" class="btn btn-primary">Send</button>
+                  </div>
+             </div>
+         </div>
+
+          <!-- Consent Modal -->
+          <div id="consent-modal" class="modal">
+              <div class="modal-content">
+                  <span class="close" onclick="closeConsentModal()">&times;</span>
+                  <h2>🔒 Privacy Consent</h2>
+
+                  <div class="consent-intro">
+                      <p><strong>TidyMe</strong> needs your consent to collect and process data for system cleanup and AI assistance.</p>
+                  </div>
+
+                  <form id="consent-form" onsubmit="submitConsent(event)">
+                      <div class="consent-section">
+                          <label class="checkbox-label">
+                              <input type="checkbox" id="consent-checkbox" required>
+                              <span class="checkmark"></span>
+                              I consent to TidyMe collecting and processing my system data, file metadata, and AI chat conversations for cleanup and optimization purposes.
+                          </label>
+                      </div>
+
+                      <div class="consent-actions">
+                          <button type="submit" class="btn btn-primary">Accept & Continue</button>
+                          <button type="button" onclick="declineConsent()" class="btn btn-secondary">Decline</button>
+                      </div>
+                  </form>
+
+                  <div class="consent-footer">
+                      <p><small>You can revoke consent anytime in Settings. Data is stored securely using macOS Keychain.</small></p>
+                  </div>
+              </div>
+          </div>
+
+          <!-- Vault Modal -->
+          <div id="vault-modal" class="modal">
+             <div class="modal-content large-modal">
+                 <span class="close" onclick="closeVaultModal()">&times;</span>
+                 <h2>🔐 Secure Vault</h2>
+
+                 <div class="vault-controls">
+                     <div class="vault-actions">
+                         <button onclick="showAddItemForm()" class="btn btn-primary">➕ Add Item</button>
+                         <button onclick="loadVaultItems()" class="btn btn-info">🔄 Refresh</button>
+                         <button onclick="showVaultStats()" class="btn btn-secondary">📊 Stats</button>
+                     </div>
+                     <div class="vault-search">
+                         <input type="text" id="vault-search" placeholder="Search vault..." onkeyup="searchVault()">
+                         <select id="vault-category-filter" onchange="filterVaultByCategory()">
+                             <option value="">All Categories</option>
+                         </select>
+                     </div>
+                 </div>
+
+                 <!-- Add Item Form -->
+                 <div id="add-item-form" class="vault-form" style="display: none;">
+                     <h3>Add New Item</h3>
+                     <form onsubmit="addVaultItem(event)">
+                         <div class="form-group">
+                             <label for="item-key">Key:</label>
+                             <input type="text" id="item-key" required>
+                         </div>
+                         <div class="form-group">
+                             <label for="item-value">Value:</label>
+                             <textarea id="item-value" rows="3" required></textarea>
+                         </div>
+                         <div class="form-group">
+                             <label for="item-category">Category:</label>
+                             <select id="item-category">
+                                 <option value="general">General</option>
+                                 <option value="api-keys">API Keys</option>
+                                 <option value="secrets">Secrets</option>
+                                 <option value="credentials">Credentials</option>
+                                 <option value="paths">Paths</option>
+                                 <option value="aliases">Aliases</option>
+                                 <option value="deadlines">Deadlines</option>
+                                 <option value="config">Configuration</option>
+                             </select>
+                         </div>
+                         <div class="form-group">
+                             <label for="item-tags">Tags (comma-separated):</label>
+                             <input type="text" id="item-tags" placeholder="tag1, tag2, tag3">
+                         </div>
+                         <div class="form-group">
+                             <label for="item-expires">Expires in (days):</label>
+                             <input type="number" id="item-expires" placeholder="Optional">
+                         </div>
+                         <div class="form-actions">
+                             <button type="submit" class="btn btn-primary">Save Item</button>
+                             <button type="button" onclick="hideAddItemForm()" class="btn btn-secondary">Cancel</button>
+                         </div>
+                     </form>
+                 </div>
+
+                 <!-- Vault Items List -->
+                 <div id="vault-items" class="vault-items">
+                     <p>Loading vault items...</p>
+                 </div>
+
+                 <!-- Vault Stats -->
+                 <div id="vault-stats" class="vault-stats" style="display: none;">
+                     <h3>Vault Statistics</h3>
+                     <div id="stats-content">
+                         <p>Loading statistics...</p>
+                     </div>
+                 </div>
+             </div>
+         </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.tidyme.server</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/bash</string>
+        <string>--</string>
+        <string>/path/to/tidyme/start_server.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/path/to/tidyme</string>
+
+    <key>StandardOutPath</key>
+    <string>/path/to/tidyme/logs/server.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/path/to/tidyme/logs/server-error.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin</string>
+        <key>FLASK_ENV</key>
+        <string>production</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>StartInterval</key>
+    <integer>3600</integer>
+
+    <key>UserName</key>
+    <string>your-username</string>
+
+    <key>GroupName</key>
+    <string>staff</string>
+</dict>
+</plist>
